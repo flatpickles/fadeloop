@@ -9,32 +9,47 @@ fi
 input_file="$1"
 crossfade_duration="$2"
 
-# Get the duration of the input video
-duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input_file")
-
-# Calculate the new video length and cut point
-new_length=$(echo "$duration - $crossfade_duration" | bc -l)
-cut_point=$(echo "$new_length - $crossfade_duration" | bc -l)
-
-# Check if crossfade duration is valid
-if (( $(echo "$crossfade_duration > $new_length / 2" | bc -l) )); then
-    echo "Error: Crossfade duration cannot be greater than half the new video length."
+# Check if the input file has an audio stream
+has_audio=$(ffprobe -i "$input_file" -show_streams -select_streams a -loglevel error)
+if [ -n "$has_audio" ]; then
+    echo "Error: This script does not support videos with audio tracks. Please remove the audio from your input video and try again."
     exit 1
 fi
 
-# Generate output filename
-output_file="${input_file%.*}_reversed_end_crossfaded.mp4"
+# Get the duration of the input video
+duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input_file")
 
-# Perform the video and audio editing
-ffmpeg -i "$input_file" -filter_complex "
-[0:v]split[v1][v2];
-[v1]trim=0:${cut_point},setpts=PTS-STARTPTS[vfirst];
-[v2]trim=${cut_point}:${new_length},setpts=PTS-STARTPTS[vsecond];
-[vsecond][vfirst]xfade=transition=fade:duration=${crossfade_duration}:offset=0,setpts=PTS-STARTPTS[vout];
-[0:a]asplit[a1][a2];
-[a1]atrim=0:${cut_point},asetpts=PTS-STARTPTS[afirst];
-[a2]atrim=${cut_point}:${new_length},asetpts=PTS-STARTPTS[asecond];
-[asecond][afirst]acrossfade=d=${crossfade_duration}:c1=tri:c2=tri[aout]
-" -map "[vout]" -map "[aout]" -t ${new_length} "$output_file"
+# Calculate the start point of C
+c_start=$(echo "$duration - $crossfade_duration" | bc -l)
+
+# Generate output filename
+output_file="${input_file%.*}_crossfaded.mp4"
+
+# Force a specific frame rate (e.g., 30 fps)
+forced_fps="30"
+
+# Create temporary files
+temp_a="${input_file%.*}_temp_a.mp4"
+temp_b="${input_file%.*}_temp_b.mp4"
+temp_c="${input_file%.*}_temp_c.mp4"
+temp_d="${input_file%.*}_temp_d.mp4"
+
+# Trim the video into three parts: A, B, and C
+ffmpeg -i "$input_file" -t ${crossfade_duration} -r ${forced_fps} -filter:v "fps=${forced_fps}" "${temp_a}"
+ffmpeg -i "$input_file" -ss ${crossfade_duration} -t $(echo "$c_start - $crossfade_duration" | bc -l) -r ${forced_fps} -filter:v "fps=${forced_fps}" "${temp_b}"
+ffmpeg -i "$input_file" -ss ${c_start} -r ${forced_fps} -filter:v "fps=${forced_fps}" "${temp_c}"
+
+# Create composite video D by crossfading C into A
+ffmpeg -i "${temp_c}" -i "${temp_a}" -filter_complex "
+[0:v][1:v]xfade=transition=fade:duration=${crossfade_duration}:offset=0,format=yuv420p
+" -r ${forced_fps} "${temp_d}"
+
+# Concatenate B and D
+ffmpeg -i "${temp_b}" -i "${temp_d}" -filter_complex "
+[0:v][1:v]concat=n=2:v=1:a=0,format=yuv420p
+" -r ${forced_fps} "${output_file}"
+
+# Clean up temporary files
+rm "${temp_a}" "${temp_b}" "${temp_c}" "${temp_d}"
 
 echo "Processed video saved as $output_file"
