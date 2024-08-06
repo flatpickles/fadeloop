@@ -19,14 +19,15 @@ fi
 # Get the duration of the input video
 duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input_file")
 
+# Detect the frame rate of the input video
+detected_fps=$(ffprobe -v error -select_streams v -count_packets -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 "$input_file")
+forced_fps=$(echo "scale=2; $detected_fps" | bc)
+
 # Calculate the start point of C
 c_start=$(echo "$duration - $crossfade_duration" | bc -l)
 
 # Generate output filename
-output_file="${input_file%.*}_crossfaded.mp4"
-
-# Force a specific frame rate (e.g., 30 fps)
-forced_fps="30"
+output_file="${input_file%.*}_fadeloop.mp4"
 
 # Create temporary files
 temp_a="${input_file%.*}_temp_a.mp4"
