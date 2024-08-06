@@ -6,13 +6,14 @@ Here's the editing process, provided `input_file` and `duration` (in seconds):
 
 - `input_file` is split into three temporary files: A, B, and C. A and C are both `duration` long.
 - One more temporary file is created, D, which fades from C into A, creating a crossfade for the final loop.
-- B is concatenated with D,
+- B is concatenated with D, creating a final video that crossfades smoothly into itself across the loop line.
+- All temporary files are deleted.
 
 There are some caveats to using this:
 
-- Audio tracks aren't yet supported
-- The output file will be shorter than the input by `duration`
-- The output file will start `duration` into the original video input
+- Audio tracks aren't yet supported.
+- The output file will be shorter than the input by `duration`.
+- The output file will start `duration` into the original video input.
 
 Example usage:
 
